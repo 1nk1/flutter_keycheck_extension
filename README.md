@@ -1,9 +1,9 @@
 # Flutter Testing Keys Inspector
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/your-publisher-name.flutter-testing-keys-inspector)](https://marketplace.visualstudio.com/items?itemName=your-publisher-name.flutter-testing-keys-inspector)
-[![Downloads](https://img.shields.io/visual-studio-marketplace/d/your-publisher-name.flutter-testing-keys-inspector)](https://marketplace.visualstudio.com/items?itemName=your-publisher-name.flutter-testing-keys-inspector)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/your-publisher-name.flutter-testing-keys-inspector)](https://marketplace.visualstudio.com/items?itemName=your-publisher-name.flutter-testing-keys-inspector)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/1nk1/flutter_keycheck_extension/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/1nk1/flutter_keycheck_extension/workflows/CI/badge.svg)](https://github.com/1nk1/flutter_keycheck_extension/actions)
+[![GitHub stars](https://img.shields.io/github/stars/1nk1/flutter_keycheck_extension.svg?style=social&label=Star)](https://github.com/1nk1/flutter_keycheck_extension)
 
 Professional testing keys management and validation for Flutter projects with intelligent code analysis and automated suggestions.
 
