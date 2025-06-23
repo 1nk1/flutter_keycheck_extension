@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#0175C2" stroke="#02569B" stroke-width="4" />
+
+  <!-- Key icon -->
+  <g transform="translate(64, 64)">
+    <!-- Key head -->
+    <circle cx="-15" cy="-10" r="12" fill="#FFFFFF" stroke="#0175C2" stroke-width="2" />
+    <circle cx="-15" cy="-10" r="6" fill="#0175C2" />
+
+    <!-- Key shaft -->
+    <rect x="-3" y="-12" width="25" height="4" fill="#FFFFFF" rx="2" />
+
+    <!-- Key teeth -->
+    <rect x="20" y="-12" width="4" height="8" fill="#FFFFFF" rx="1" />
+    <rect x="16" y="-12" width="3" height="6" fill="#FFFFFF" rx="1" />
+
+    <!-- Flutter logo elements -->
+    <path d="M -5 15 L 5 5 L 15 5 L 5 15 L 15 25 L 5 25 Z" fill="#54C5F8" />
+    <path d="M 5 15 L 15 5 L 25 5 L 15 15 Z" fill="#01579B" />
+    <circle cx="15" cy="15" r="3" fill="#FFFFFF" />
+  </g>
+
+  <!-- Testing/inspection elements -->
+  <g transform="translate(90, 30)">
+    <circle cx="0" cy="0" r="8" fill="#4CAF50" stroke="#FFFFFF" stroke-width="2" />
+    <path d="M -3 0 L -1 2 L 3 -2" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" />
+  </g>
+</svg>

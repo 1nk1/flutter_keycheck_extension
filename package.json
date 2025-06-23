@@ -1,0 +1,162 @@
+{
+  "name": "flutter-testing-keys-inspector",
+  "displayName": "Flutter Testing Keys Inspector",
+  "description": "Professional testing keys management and validation for Flutter projects with intelligent code analysis",
+  "version": "1.0.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Testing",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "flutter",
+    "testing",
+    "keys",
+    "automation",
+    "dart",
+    "validation",
+    "code-analysis",
+    "widget-testing"
+  ],
+
+  "galleryBanner": {
+    "color": "#0175C2",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/flutter-testing-keys-inspector.git"
+  },
+  "homepage": "https://github.com/your-username/flutter-testing-keys-inspector#readme",
+  "bugs": {
+    "url": "https://github.com/your-username/flutter-testing-keys-inspector/issues"
+  },
+  "license": "MIT",
+  "activationEvents": [
+    "workspaceContains:**/pubspec.yaml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "flutterTestingKeys",
+          "name": "Testing Keys",
+          "when": "flutterProject"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "flutterTestingKeys.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "flutterTestingKeys.validate",
+        "title": "Validate Keys",
+        "icon": "$(check)"
+      },
+      {
+        "command": "flutterTestingKeys.generateReport",
+        "title": "Generate Report",
+        "icon": "$(report)"
+      },
+      {
+        "command": "flutterTestingKeys.addKey",
+        "title": "Add New Key",
+        "icon": "$(add)"
+      },
+      {
+        "command": "flutterTestingKeys.goToDefinition",
+        "title": "Go to Definition",
+        "icon": "$(go-to-file)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "flutterTestingKeys.refresh",
+          "when": "view == flutterTestingKeys",
+          "group": "navigation"
+        },
+        {
+          "command": "flutterTestingKeys.validate",
+          "when": "view == flutterTestingKeys",
+          "group": "navigation"
+        },
+        {
+          "command": "flutterTestingKeys.addKey",
+          "when": "view == flutterTestingKeys",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "flutterTestingKeys.goToDefinition",
+          "when": "view == flutterTestingKeys && viewItem == key",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Flutter Testing Keys Inspector",
+      "properties": {
+        "flutterTestingKeys.autoValidate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically validate keys on file save"
+        },
+        "flutterTestingKeys.keyConstantsPath": {
+          "type": "string",
+          "default": "lib/constants/key_constants.dart",
+          "description": "Path to KeyConstants file"
+        },
+        "flutterTestingKeys.showUnusedKeys": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show unused keys in the tree view"
+        },
+        "flutterTestingKeys.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable diagnostic messages for key issues"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "webpack": "webpack --mode production --devtool hidden-source-map",
+    "compile-web": "webpack",
+    "watch-web": "webpack --watch"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "@vscode/test-electron": "^2.2.0",
+    "@vscode/vsce": "^3.5.0",
+    "eslint": "^8.28.0",
+    "glob": "^11.0.3",
+    "mocha": "^11.7.0",
+    "ts-loader": "^9.4.1",
+    "typescript": "^4.9.4",
+    "webpack": "^5.75.0",
+    "webpack-cli": "^5.0.0"
+  }
+}
