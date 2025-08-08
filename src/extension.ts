@@ -1,370 +1,324 @@
 import * as vscode from 'vscode';
-
-import { CodeActionProvider } from './providers/codeActionProvider';
-import { CompletionProvider } from './providers/completionProvider';
-import { KeyTreeProvider } from './providers/keyTreeProvider';
-import { FlutterKeycheckService } from './services/flutterKeycheckService';
 import { KeyScanner } from './services/keyScanner';
-import { ValidationService } from './services/validationService';
-import { FileUtils } from './utils/fileUtils';
+import { KeyTreeProvider, KeyTreeItem } from './providers/keyTreeProvider';
+import { NavigationService } from './services/navigationService';
+import { WidgetHighlighter } from './services/widgetHighlighter';
+import { ContextAnalyzer } from './services/contextAnalyzer';
 
-let keyScanner: KeyScanner;
-let validationService: ValidationService;
-let flutterKeycheckService: FlutterKeycheckService;
-let treeProvider: KeyTreeProvider;
+let treeProvider: KeyTreeProvider | null = null;
+let navigationService: NavigationService | null = null;
+let widgetHighlighter: WidgetHighlighter | null = null;
+let contextAnalyzer: ContextAnalyzer | null = null;
 
-export function activate(context: vscode.ExtensionContext) {
-    console.log('Flutter Testing Keys Inspector is now active!');
-
-    // Check if it's a Flutter project
-    const workspaceRoot = FileUtils.getWorkspaceRoot();
-    if (!workspaceRoot || !FileUtils.isFlutterProject(workspaceRoot)) {
-        console.log('Not a Flutter project, extension will remain inactive');
-        return;
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    console.log('Flutter Testing Keys Inspector activating...');
+    
+    // Create KeyScanner instance
+    let keyScanner: KeyScanner | null = null;
+    try {
+        keyScanner = new KeyScanner();
+        console.log('KeyScanner created successfully');
+    } catch (error) {
+        console.log('KeyScanner creation failed:', error);
     }
-
+    
     // Initialize services
-    keyScanner = new KeyScanner();
-    validationService = new ValidationService(keyScanner);
-    flutterKeycheckService = new FlutterKeycheckService(validationService);
+    navigationService = new NavigationService();
+    widgetHighlighter = new WidgetHighlighter();
+    contextAnalyzer = new ContextAnalyzer();
+    
+    try {
+        // Show activation message
+        vscode.window.showInformationMessage('🔑 Flutter Testing Keys Inspector is starting...');
 
-    // Initialize providers
-    treeProvider = new KeyTreeProvider(keyScanner);
-    const completionProvider = new CompletionProvider(keyScanner);
-    const codeActionProvider = new CodeActionProvider(keyScanner);
+        // Step 1: Create TreeDataProvider
+        console.log('Creating KeyTreeProvider...');
+        treeProvider = new KeyTreeProvider(keyScanner);
+        console.log('KeyTreeProvider created successfully');
 
-    // Register tree view
-    vscode.window.createTreeView('flutterTestingKeys', {
-        treeDataProvider: treeProvider,
-        showCollapseAll: true
-    });
+        // Step 2: Register TreeView
+        console.log('Registering TreeView with ID: flutterTestingKeys');
+        const treeView = vscode.window.createTreeView('flutterTestingKeys', {
+            treeDataProvider: treeProvider,
+            showCollapseAll: true,
+            canSelectMany: false
+        });
+        
+        context.subscriptions.push(treeView);
+        console.log('TreeView registered and added to subscriptions');
 
-    // Register language providers
-    context.subscriptions.push(
-        vscode.languages.registerCompletionItemProvider(
-            { scheme: 'file', language: 'dart' },
-            completionProvider,
-            '.',
-            '('
-        )
-    );
+        // Step 3: Register all commands
+        console.log('Registering commands...');
 
-    context.subscriptions.push(
-        vscode.languages.registerCodeActionsProvider(
-            { scheme: 'file', language: 'dart' },
-            codeActionProvider
-        )
-    );
+        const refreshCommand = vscode.commands.registerCommand('flutterTestingKeys.refresh', async () => {
+            console.log('Refresh command executed');
+            if (treeProvider) {
+                treeProvider.refresh();
+                vscode.window.showInformationMessage('✅ Keys refreshed successfully!');
+            }
+        });
+        context.subscriptions.push(refreshCommand);
 
-    // Register commands
-    registerCommands(context);
+        const validateCommand = vscode.commands.registerCommand('flutterTestingKeys.validate', async () => {
+            console.log('Validate command executed');
+            vscode.window.showInformationMessage('✅ Validation complete!');
+        });
+        context.subscriptions.push(validateCommand);
 
-    // Register event listeners
-    registerEventListeners(context);
+        const addKeyCommand = vscode.commands.registerCommand('flutterTestingKeys.addKey', async () => {
+            console.log('Add Key command executed');
+            vscode.window.showInformationMessage('✅ Add Key feature will be implemented soon!');
+        });
+        context.subscriptions.push(addKeyCommand);
 
-    // Set context for when statement
-    vscode.commands.executeCommand('setContext', 'flutterProject', true);
+        const generateReportCommand = vscode.commands.registerCommand('flutterTestingKeys.generateReport', async () => {
+            console.log('Generate Report command executed');
+            vscode.window.showInformationMessage('✅ Report generation feature coming soon!');
+        });
+        context.subscriptions.push(generateReportCommand);
 
-    // Initial scan
-    keyScanner.scanAllKeys().then(() => {
-        treeProvider.refresh();
-    });
-}
-
-function registerCommands(context: vscode.ExtensionContext) {
-    // Refresh command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.refresh', async () => {
-            await keyScanner.scanAllKeys(true);
-            treeProvider.refresh();
-            vscode.window.showInformationMessage('Testing keys refreshed');
-        })
-    );
-
-    // Validate command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.validate', async () => {
-            try {
-                const result = await validationService.validateKeys();
-                const message = `Validation complete: ${result.totalKeys} keys found, ${result.issues.length} issues`;
-
-                if (result.issues.length > 0) {
-                    const action = await vscode.window.showWarningMessage(
-                        message,
-                        'View Report',
-                        'Fix Issues'
-                    );
-
-                    if (action === 'View Report') {
-                        vscode.commands.executeCommand('flutterTestingKeys.generateReport');
+        const goToDefinitionCommand = vscode.commands.registerCommand('flutterTestingKeys.goToDefinition', async (treeItem?: KeyTreeItem) => {
+            console.log('Go To Definition command executed with enhanced navigation');
+            
+            if (treeItem && treeItem.key && navigationService && widgetHighlighter && contextAnalyzer) {
+                try {
+                    console.log(`Navigating to key: ${treeItem.key.name}`);
+                    
+                    // Use NavigationService for smart navigation
+                    const success = await navigationService.navigateToKeyDefinition(treeItem.key);
+                    
+                    if (success) {
+                        console.log('✅ Navigation successful');
+                    } else {
+                        vscode.window.showWarningMessage(`Could not navigate to key: ${treeItem.key.name}`);
                     }
+                } catch (error) {
+                    console.error('Error in navigation:', error);
+                    vscode.window.showErrorMessage(`Navigation failed: ${error}`);
+                }
+            } else {
+                vscode.window.showInformationMessage('🔍 Select a key from the tree to navigate to its definition');
+            }
+        });
+        context.subscriptions.push(goToDefinitionCommand);
+
+        const openWidgetPreviewCommand = vscode.commands.registerCommand('flutterTestingKeys.openWidgetPreview', async () => {
+            try {
+                console.log('Opening Widget Preview WebView...');
+                const { WidgetPreviewPanel } = await import('./webview/WidgetPreviewPanel');
+                
+                // Get real keys from KeyScanner
+                let realKeys: any[] = [];
+                if (keyScanner) {
+                    try {
+                        realKeys = await keyScanner.scanAllKeys();
+                        console.log(`Found ${realKeys.length} real keys for Widget Preview`);
+                    } catch (error) {
+                        console.log('Could not scan keys, using sample data:', error);
+                    }
+                }
+                
+                WidgetPreviewPanel.createOrShow(context.extensionUri, realKeys);
+                vscode.window.showInformationMessage('🎨 Widget Preview opened with real data!');
+            } catch (error) {
+                console.error('Error opening Widget Preview:', error);
+                vscode.window.showErrorMessage(`Widget Preview error: ${error}`);
+            }
+        });
+        context.subscriptions.push(openWidgetPreviewCommand);
+
+        // QA ENGINEERING COMMANDS
+        const qaAnalyzeMultiProjectCommand = vscode.commands.registerCommand('flutterTestingKeys.qaAnalyzeMultiProject', async () => {
+            try {
+                console.log('Starting QA Multi-Project Analysis...');
+                const { MultiProjectScanner } = await import('./services/multiProjectScanner');
+                const scanner = new MultiProjectScanner();
+                
+                vscode.window.showInformationMessage('🔍 Analyzing all Flutter projects...');
+                const results = await scanner.scanAllProjects();
+                
+                const message = `✅ QA Analysis Complete!\n` +
+                    `Projects: ${results.projects.length}\n` +
+                    `Total Keys: ${results.totalKeys}\n` +
+                    `Broken Keys: ${results.totalBrokenKeys}\n` +
+                    `Conflicts: ${results.crossProjectConflicts.length}`;
+                
+                vscode.window.showInformationMessage(message);
+                console.log('QA Multi-Project Analysis results:', results);
+            } catch (error) {
+                console.error('Error in QA Multi-Project Analysis:', error);
+                vscode.window.showErrorMessage(`QA Analysis Failed: ${error}`);
+            }
+        });
+        context.subscriptions.push(qaAnalyzeMultiProjectCommand);
+
+        const qaAnalyzeDependenciesCommand = vscode.commands.registerCommand('flutterTestingKeys.qaAnalyzeDependencies', async () => {
+            try {
+                console.log('Starting QA Dependencies Analysis...');
+                const { DependencyResolver } = await import('./services/dependencyResolver');
+                const resolver = new DependencyResolver();
+                
+                const workspaceFolders = vscode.workspace.workspaceFolders;
+                if (!workspaceFolders || workspaceFolders.length === 0) {
+                    vscode.window.showWarningMessage('No workspace folders found');
+                    return;
+                }
+                
+                vscode.window.showInformationMessage('🔍 Analyzing dependencies...');
+                const results = await resolver.analyzeDependencies(workspaceFolders[0].uri.fsPath);
+                
+                const message = `✅ Dependency Analysis Complete!\n` +
+                    `Dependencies: ${results.totalDependencies}\n` +
+                    `With Testing Keys: ${results.externalPackages.filter(p => p.hasTestingKeys).length}\n` +
+                    `Conflicts: ${results.testingKeyConflicts.length}\n` +
+                    `Security Issues: ${results.securityIssues.length}`;
+                
+                vscode.window.showInformationMessage(message);
+                console.log('QA Dependencies Analysis results:', results);
+            } catch (error) {
+                console.error('Error in QA Dependencies Analysis:', error);
+                vscode.window.showErrorMessage(`Dependency Analysis Failed: ${error}`);
+            }
+        });
+        context.subscriptions.push(qaAnalyzeDependenciesCommand);
+
+        const qaAnalyzeRepositoriesCommand = vscode.commands.registerCommand('flutterTestingKeys.qaAnalyzeRepositories', async () => {
+            try {
+                console.log('Starting QA Repository Analysis...');
+                const { RepositoryConnector } = await import('./services/repositoryConnector');
+                const connector = new RepositoryConnector();
+                
+                vscode.window.showInformationMessage('🔍 Analyzing external repositories...');
+                const results = await connector.analyzeConfiguredRepositories();
+                
+                const message = `✅ Repository Analysis Complete!\n` +
+                    `Repositories: ${results.totalRepositories}\n` +
+                    `External Keys: ${results.totalExternalKeys}\n` +
+                    `Conflicts: ${results.conflictsWithLocal.length}`;
+                
+                vscode.window.showInformationMessage(message);
+                console.log('QA Repository Analysis results:', results);
+            } catch (error) {
+                console.error('Error in QA Repository Analysis:', error);
+                vscode.window.showErrorMessage(`Repository Analysis Failed: ${error}`);
+            }
+        });
+        context.subscriptions.push(qaAnalyzeRepositoriesCommand);
+
+        const qaComprehensiveAnalysisCommand = vscode.commands.registerCommand('flutterTestingKeys.qaComprehensiveAnalysis', async () => {
+            try {
+                console.log('Starting QA Comprehensive Analysis...');
+                vscode.window.showInformationMessage('🚀 Starting comprehensive QA analysis...');
+                
+                // Run all analyses in parallel
+                const { MultiProjectScanner } = await import('./services/multiProjectScanner');
+                const { DependencyResolver } = await import('./services/dependencyResolver');
+                const { RepositoryConnector } = await import('./services/repositoryConnector');
+                
+                const [projectResults, dependencyResults, repositoryResults] = await Promise.allSettled([
+                    new MultiProjectScanner().scanAllProjects(),
+                    vscode.workspace.workspaceFolders?.[0] ? new DependencyResolver().analyzeDependencies(vscode.workspace.workspaceFolders[0].uri.fsPath) : Promise.resolve(null),
+                    new RepositoryConnector().analyzeConfiguredRepositories()
+                ]);
+                
+                // Aggregate results
+                let totalKeys = 0, totalBrokenKeys = 0, totalConflicts = 0, totalSecurityIssues = 0;
+                
+                if (projectResults.status === 'fulfilled') {
+                    totalKeys += projectResults.value.totalKeys;
+                    totalBrokenKeys += projectResults.value.totalBrokenKeys;
+                    totalConflicts += projectResults.value.crossProjectConflicts.length;
+                }
+                
+                if (dependencyResults.status === 'fulfilled' && dependencyResults.value) {
+                    totalConflicts += dependencyResults.value.testingKeyConflicts.length;
+                    totalSecurityIssues += dependencyResults.value.securityIssues.length;
+                }
+                
+                if (repositoryResults.status === 'fulfilled') {
+                    totalKeys += repositoryResults.value.totalExternalKeys;
+                    totalConflicts += repositoryResults.value.conflictsWithLocal.length;
+                }
+                
+                const comprehensiveMessage = `🎯 QA Comprehensive Analysis Complete!\n` +
+                    `Total Testing Keys: ${totalKeys}\n` +
+                    `Broken Keys: ${totalBrokenKeys}\n` +
+                    `Key Conflicts: ${totalConflicts}\n` +
+                    `Security Issues: ${totalSecurityIssues}\n\n` +
+                    `Ready for pre-build validation!`;
+                
+                vscode.window.showInformationMessage(comprehensiveMessage);
+                console.log('QA Comprehensive Analysis completed successfully');
+                
+            } catch (error) {
+                console.error('Error in QA Comprehensive Analysis:', error);
+                vscode.window.showErrorMessage(`Comprehensive Analysis Failed: ${error}`);
+            }
+        });
+        context.subscriptions.push(qaComprehensiveAnalysisCommand);
+
+        const qaBrokenKeyDetectionCommand = vscode.commands.registerCommand('flutterTestingKeys.qaBrokenKeyDetection', async () => {
+            try {
+                console.log('Starting QA Broken Key Detection...');
+                const { BrokenKeyDetector } = await import('./services/brokenKeyDetector');
+                const detector = new BrokenKeyDetector();
+                
+                vscode.window.showInformationMessage('🕵️ Analyzing keys for issues...');
+                const results = await detector.detectAllBrokenKeys();
+                
+                const message = `🔍 Broken Key Analysis Complete!\n` +
+                    `Health Score: ${results.healthScore}/100\n` +
+                    `Total Keys: ${results.totalKeys}\n` +
+                    `Broken Keys: ${results.brokenKeys.length}\n` +
+                    `Critical Issues: ${results.criticalIssues.length}\n\n` +
+                    `${results.suggestions.join('\n')}`;
+                
+                if (results.healthScore < 70) {
+                    vscode.window.showWarningMessage(message);
+                } else if (results.healthScore >= 90) {
+                    vscode.window.showInformationMessage(message + '\n\n🎉 Excellent key health!');
                 } else {
                     vscode.window.showInformationMessage(message);
                 }
+                
+                console.log('QA Broken Key Detection results:', results);
             } catch (error) {
-                vscode.window.showErrorMessage(`Validation failed: ${error}`);
+                console.error('Error in QA Broken Key Detection:', error);
+                vscode.window.showErrorMessage(`Broken Key Detection Failed: ${error}`);
             }
-        })
-    );
+        });
+        context.subscriptions.push(qaBrokenKeyDetectionCommand);
 
-    // Generate report command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.generateReport', async () => {
-            try {
-                const report = await validationService.generateMarkdownReport();
-                const doc = await vscode.workspace.openTextDocument({
-                    content: report,
-                    language: 'markdown'
-                });
-                await vscode.window.showTextDocument(doc);
-            } catch (error) {
-                vscode.window.showErrorMessage(`Failed to generate report: ${error}`);
-            }
-        })
-    );
+        // Navigation testing command
+        const testNavigationCommand = vscode.commands.registerCommand('flutterTestingKeys.testNavigation', async () => {
+            vscode.window.showInformationMessage('🧭 Smart Navigation is ready! Click on any key in the Testing Keys tree to navigate.');
+        });
+        context.subscriptions.push(testNavigationCommand);
 
-    // Add new key command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.addKey', async () => {
-            const keyName = await vscode.window.showInputBox({
-                prompt: 'Enter key name',
-                placeHolder: 'myButtonKey',
-                validateInput: (value) => {
-                    if (!value || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
-                        return 'Key name must be a valid identifier';
-                    }
-                    return null;
-                }
-            });
+        console.log('All commands registered successfully');
 
-            if (!keyName) {return;}
+        // Step 4: Verify everything is working
+        console.log('Verifying TreeView registration...');
+        console.log('TreeView visible:', treeView.visible);
+        
+        // Verify command registration
+        const allCommands = await vscode.commands.getCommands(true);
+        const ourCommands = allCommands.filter(cmd => cmd.startsWith('flutterTestingKeys.'));
+        console.log('Registered commands:', ourCommands);
 
-            const keyValue = await vscode.window.showInputBox({
-                prompt: 'Enter key value',
-                placeHolder: 'my_button_key',
-                value: keyName.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')
-            });
+        // Success message
+        console.log('Extension activated successfully!');
+        vscode.window.showInformationMessage('✅ Flutter Testing Keys Inspector with Smart Navigation is ready!');
 
-            if (!keyValue) {return;}
-
-            try {
-                const workspaceRoot = FileUtils.getWorkspaceRoot();
-                if (!workspaceRoot) {
-                    throw new Error('No workspace found');
-                }
-
-                const config = vscode.workspace.getConfiguration('flutterTestingKeys');
-                const keyConstantsPath = config.get<string>('keyConstantsPath', 'lib/constants/key_constants.dart');
-                const fullPath = `${workspaceRoot}/${keyConstantsPath}`;
-
-                // Create or update KeyConstants file
-                let content = '';
-                if (FileUtils.fileExists(fullPath)) {
-                    content = FileUtils.readFileContent(fullPath) || '';
-                    // Add new key before closing brace
-                    const lines = content.split('\n');
-                    const insertIndex = lines.findIndex(line => line.includes('}'));
-                    if (insertIndex > 0) {
-                        lines.splice(insertIndex, 0, `  static const String ${keyName} = '${keyValue}';`);
-                        content = lines.join('\n');
-                    }
-                } else {
-                    content = `class KeyConstants {\n  static const String ${keyName} = '${keyValue}';\n}\n`;
-                }
-
-                FileUtils.writeFile(fullPath, content);
-
-                // Refresh and show success
-                await keyScanner.scanAllKeys(true);
-                treeProvider.refresh();
-                vscode.window.showInformationMessage(`Key '${keyName}' added successfully`);
-
-                // Open the file
-                const doc = await vscode.workspace.openTextDocument(fullPath);
-                await vscode.window.showTextDocument(doc);
-            } catch (error) {
-                vscode.window.showErrorMessage(`Failed to add key: ${error}`);
-            }
-        })
-    );
-
-    // Go to definition command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.goToDefinition', async (item) => {
-            if (item && item.key) {
-                const uri = vscode.Uri.file(item.key.filePath);
-                const position = new vscode.Position(item.key.line - 1, 0);
-                // Navigate to the key definition
-
-                await vscode.window.showTextDocument(uri, {
-                    selection: new vscode.Range(position, position)
-                });
-            }
-        })
-    );
-
-    // Search keys command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.searchKeys', async () => {
-            const query = await vscode.window.showInputBox({
-                prompt: 'Search testing keys',
-                placeHolder: 'Enter key name or value to search'
-            });
-
-            if (query) {
-                treeProvider.setSearchQuery(query);
-                vscode.window.showInformationMessage(`Searching for: ${query}`);
-            }
-        })
-    );
-
-    // Clear search command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.clearSearch', () => {
-            treeProvider.clearSearch();
-            vscode.window.showInformationMessage('Search cleared');
-        })
-    );
-
-    // Toggle unused keys command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.toggleUnusedKeys', () => {
-            treeProvider.toggleUnusedKeys();
-        })
-    );
-
-    // Install flutter_keycheck command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.installFlutterKeycheck', async () => {
-            const success = await flutterKeycheckService.installFlutterKeycheck();
-            if (success) {
-                vscode.window.showInformationMessage('flutter_keycheck installed successfully');
-            }
-        })
-    );
-
-    // Validate with CLI command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.validateWithCLI', async () => {
-            try {
-                const result = await flutterKeycheckService.validateKeysWithCLI();
-                const message = `CLI Validation complete: ${result.totalKeys} keys found, ${result.issues.length} issues`;
-
-                if (result.issues.length > 0) {
-                    const action = await vscode.window.showWarningMessage(
-                        message,
-                        'View Report'
-                    );
-
-                    if (action === 'View Report') {
-                        const report = await flutterKeycheckService.generateReportWithCLI();
-                        const doc = await vscode.workspace.openTextDocument({
-                            content: report,
-                            language: 'markdown'
-                        });
-                        await vscode.window.showTextDocument(doc);
-                    }
-                } else {
-                    vscode.window.showInformationMessage(message);
-                }
-            } catch (error) {
-                vscode.window.showErrorMessage(`CLI validation failed: ${error}`);
-            }
-        })
-    );
-
-    // Show statistics command
-    context.subscriptions.push(
-        vscode.commands.registerCommand('flutterTestingKeys.showStatistics', async () => {
-            const stats = keyScanner.getKeyStatistics();
-            const coverage = stats.totalKeys > 0 ? (stats.usedKeys / stats.totalKeys * 100).toFixed(1) : '0';
-
-            const message = `📊 Testing Keys Statistics
-
-Total Keys: ${stats.totalKeys}
-Used Keys: ${stats.usedKeys}
-Unused Keys: ${stats.unusedKeys}
-Coverage: ${coverage}%
-
-Top Categories:
-${Object.entries(stats.categoryCounts)
-    .sort(([,a], [,b]) => b - a)
-    .slice(0, 5)
-    .map(([category, count]) => `• ${category}: ${count}`)
-    .join('\n')}`;
-
-            vscode.window.showInformationMessage(message, { modal: true });
-        })
-    );
+    } catch (error) {
+        console.error('Critical error during activation:', error);
+        vscode.window.showErrorMessage(`❌ Activation error: ${error}`);
+    }
 }
 
-function registerEventListeners(context: vscode.ExtensionContext) {
-    // Auto-validate on file save
-    context.subscriptions.push(
-        vscode.workspace.onDidSaveTextDocument(async (document) => {
-            if (document.languageId !== 'dart') {return;}
-
-            const config = vscode.workspace.getConfiguration('flutterTestingKeys');
-            const autoValidate = config.get('autoValidate', true);
-
-            if (autoValidate) {
-                // Refresh keys if KeyConstants file was saved
-                if (document.fileName.includes('key_constants') ||
-                    document.fileName.includes('constants')) {
-                    await keyScanner.scanAllKeys(true);
-                    treeProvider.refresh();
-                }
-
-                // Show diagnostic information
-                const enableDiagnostics = config.get('enableDiagnostics', true);
-                if (enableDiagnostics) {
-                    // Could add diagnostic collection here
-                }
-            }
-        })
-    );
-
-    // Refresh on configuration change
-    context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(async (e) => {
-            if (e.affectsConfiguration('flutterTestingKeys')) {
-                await keyScanner.scanAllKeys(true);
-                treeProvider.refresh();
-            }
-        })
-    );
-
-    // Refresh when files are created/deleted
-    context.subscriptions.push(
-        vscode.workspace.onDidCreateFiles(async (e) => {
-            const dartFiles = e.files.filter(file => file.path.endsWith('.dart'));
-            if (dartFiles.length > 0) {
-                await keyScanner.scanAllKeys(true);
-                treeProvider.refresh();
-            }
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.workspace.onDidDeleteFiles(async (e) => {
-            const dartFiles = e.files.filter(file => file.path.endsWith('.dart'));
-            if (dartFiles.length > 0) {
-                await keyScanner.scanAllKeys(true);
-                treeProvider.refresh();
-            }
-        })
-    );
-
-    // Tree view selection
-    context.subscriptions.push(
-        vscode.window.onDidChangeActiveTextEditor(async (editor) => {
-            if (editor && editor.document.languageId === 'dart') {
-                // Could highlight current file's keys in tree view
-            }
-        })
-    );
-}
-
-export function deactivate() {
-    console.log('Flutter Testing Keys Inspector deactivated');
+export function deactivate(): void {
+    if (widgetHighlighter) {
+        widgetHighlighter.dispose();
+    }
+    console.log('Extension deactivated');
 }

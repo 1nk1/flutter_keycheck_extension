@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { KeyCategory, KeyStatistics, TestingKey } from '../models/testingKey';
 import { DartParser } from '../utils/dartParser';
 import { FileUtils } from '../utils/fileUtils';
+import { ErrorBoundary, ErrorHelpers, ErrorCategory } from '../core';
 
 export class KeyScanner {
     private keys: TestingKey[] = [];
@@ -30,7 +31,8 @@ export class KeyScanner {
             return [];
         }
 
-        try {
+        const boundary = ErrorBoundary.createServiceBoundary('KeyScanner');
+        const result = await boundary.execute(async () => {
             // Scan key constants
             const constantsKeys = await this.scanKeyConstants(workspaceRoot);
 
@@ -42,49 +44,71 @@ export class KeyScanner {
             this.lastScanTime = now;
 
             return this.keys;
-        } catch (error) {
-            console.error('Error scanning keys:', error);
-            vscode.window.showErrorMessage(`Failed to scan keys: ${error}`);
+        }, []);
+
+        if (!result.success) {
+            await ErrorHelpers.commandError(
+                'scanAllKeys',
+                'Failed to scan testing keys',
+                result.error
+            );
             return [];
         }
+
+        return result.data || [];
     }
 
     /**
      * Scan KeyConstants file for defined keys
      */
     private async scanKeyConstants(rootPath: string): Promise<TestingKey[]> {
+        const boundary = ErrorBoundary.createFileOperationBoundary('scan key constants');
         const config = vscode.workspace.getConfiguration('flutterTestingKeys');
         const keyConstantsPath = config.get<string>('keyConstantsPath', 'lib/constants/key_constants.dart');
         const fullPath = path.join(rootPath, keyConstantsPath);
 
-        if (!FileUtils.fileExists(fullPath)) {
-            // Try to find key constants file automatically
-            const dartFiles = await FileUtils.findDartFiles(rootPath);
-            const constantsFile = dartFiles.find(file => DartParser.isKeyConstantsFile(file));
+        const result = await boundary.execute(async () => {
+            if (!FileUtils.fileExists(fullPath)) {
+                // Try to find key constants file automatically
+                const dartFiles = await FileUtils.findDartFiles(rootPath);
+                const constantsFile = dartFiles.find(file => DartParser.isKeyConstantsFile(file));
 
-            if (constantsFile) {
-                return DartParser.parseKeyConstants(constantsFile);
+                if (constantsFile) {
+                    return DartParser.parseKeyConstants(constantsFile);
+                }
+
+                return [];
             }
 
+            return DartParser.parseKeyConstants(fullPath);
+        });
+
+        if (!result.success) {
+            await ErrorHelpers.fileSystemError(
+                'Failed to scan key constants file',
+                fullPath,
+                result.error
+            );
             return [];
         }
 
-        return DartParser.parseKeyConstants(fullPath);
+        return result.data || [];
     }
 
     /**
      * Scan all Dart files for key usage
      */
-    private async scanKeyUsage(rootPath: string): Promise<Map<string, {count: number, files: string[]}>> {
+    private async scanKeyUsage(rootPath: string): Promise<Map<string, {count: number, files: string[], locations: vscode.Location[]}>> {
         const dartFiles = await FileUtils.findDartFiles(rootPath, ['generated', '.g.dart']);
-        const usageMap = new Map<string, {count: number, files: string[]}>();
+        const usageMap = new Map<string, {count: number, files: string[], locations: vscode.Location[]}>();
 
         for (const file of dartFiles) {
             const fileUsage = DartParser.findKeyUsage(file);
+            const fileUsageWithLocations = DartParser.findKeyUsageWithLocations(file);
 
             for (const [keyName, count] of fileUsage.entries()) {
                 if (!usageMap.has(keyName)) {
-                    usageMap.set(keyName, { count: 0, files: [] });
+                    usageMap.set(keyName, { count: 0, files: [], locations: [] });
                 }
 
                 const usage = usageMap.get(keyName)!;
@@ -92,6 +116,10 @@ export class KeyScanner {
                 if (!usage.files.includes(file)) {
                     usage.files.push(file);
                 }
+
+                // Add locations from this file
+                const locations = fileUsageWithLocations.get(keyName) || [];
+                usage.locations.push(...locations);
             }
         }
 
@@ -103,7 +131,7 @@ export class KeyScanner {
      */
     private mergeKeysWithUsage(
         definedKeys: TestingKey[],
-        usageMap: Map<string, {count: number, files: string[]}>
+        usageMap: Map<string, {count: number, files: string[], locations: vscode.Location[]}>
     ): TestingKey[] {
         return definedKeys.map(key => {
             const usage = usageMap.get(key.name);
@@ -112,7 +140,8 @@ export class KeyScanner {
                 ...key,
                 isUsed: !!usage && usage.count > 0,
                 usageCount: usage?.count || 0,
-                usageFiles: usage?.files || []
+                usageFiles: usage?.files || [],
+                usageLocations: usage?.locations || []
             };
         });
     }

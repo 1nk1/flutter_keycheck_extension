@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["DOM", "ES2022"],
+        "module": "commonjs",
+        "outDir": "./out/webview",
+        "rootDir": "./src/webview",
+        "strict": true,
+        "jsx": "react-jsx",
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "moduleResolution": "node",
+        "allowSyntheticDefaultImports": true,
+        "typeRoots": ["./node_modules/@types"]
+    },
+    "include": [
+        "src/webview/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "out"
+    ]
+}

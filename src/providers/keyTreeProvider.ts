@@ -4,6 +4,13 @@ import { KeyCategory, KeyStatistics, TestingKey } from '../models/testingKey';
 import { KeyScanner } from '../services/keyScanner';
 import { FileUtils } from '../utils/fileUtils';
 
+interface WidgetContext {
+    widgetType: string;
+    context: string;
+    lineText: string;
+    fileName: string;
+}
+
 export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<KeyTreeItem | undefined | null | void> = new vscode.EventEmitter<KeyTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<KeyTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
@@ -11,7 +18,7 @@ export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
     private showUnusedKeys: boolean = true;
     private searchQuery: string = '';
 
-    constructor(private keyScanner: KeyScanner) {
+    constructor(private keyScanner: KeyScanner | null) {
         // Listen to configuration changes
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('flutterTestingKeys.showUnusedKeys')) {
@@ -28,11 +35,30 @@ export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
         this._onDidChangeTreeData.fire();
     }
 
+    /**
+     * Get empty state when no key scanner available
+     */
+    private getEmptyState(): KeyTreeItem[] {
+        const emptyItem = new KeyTreeItem(
+            'No Flutter project detected',
+            vscode.TreeItemCollapsibleState.None,
+            'empty'
+        );
+        emptyItem.tooltip = 'Open a Flutter project to see testing keys';
+        emptyItem.iconPath = new vscode.ThemeIcon('info');
+        return [emptyItem];
+    }
+
     getTreeItem(element: KeyTreeItem): vscode.TreeItem {
         return element;
     }
 
     async getChildren(element?: KeyTreeItem): Promise<KeyTreeItem[]> {
+        // If no keyScanner, return empty state
+        if (!this.keyScanner) {
+            return this.getEmptyState();
+        }
+
         if (!element) {
             // Root level - return categories or search results
             if (this.searchQuery) {
@@ -42,6 +68,9 @@ export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
         } else if (element.contextValue === 'category') {
             // Category level - return keys in category
             return this.getKeysInCategory(element.category!);
+        } else if (element.contextValue === 'key' && element.key) {
+            // Key level - return usage locations
+            return this.getKeyUsageLocations(element.key);
         } else if (element.contextValue === 'search') {
             // Search results level - return matching keys
             return this.getSearchResults();
@@ -54,14 +83,14 @@ export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
      * Get category nodes
      */
     private async getCategories(): Promise<KeyTreeItem[]> {
-        const keys = await this.keyScanner.scanAllKeys();
+        const keys = await this.keyScanner!.scanAllKeys();
         const filteredKeys = this.filterKeys(keys);
         const categories = this.groupKeysByCategory(filteredKeys);
 
         const items: KeyTreeItem[] = [];
 
         // Add statistics node
-        const stats = this.keyScanner.getKeyStatistics();
+        const stats = this.keyScanner!.getKeyStatistics();
         items.push(new KeyTreeItem(
             `Statistics (${stats.totalKeys} total, ${stats.usedKeys} used)`,
             vscode.TreeItemCollapsibleState.Collapsed,
@@ -93,17 +122,32 @@ export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
      * Get keys in a specific category
      */
     private async getKeysInCategory(category: KeyCategory): Promise<KeyTreeItem[]> {
-        const keys = await this.keyScanner.scanAllKeys();
+        const keys = await this.keyScanner!.scanAllKeys();
         const categoryKeys = keys.filter(key => key.category === category);
         const filteredKeys = this.filterKeys(categoryKeys);
 
-        return filteredKeys.map(key => new KeyTreeItem(
-            key.name,
-            vscode.TreeItemCollapsibleState.None,
-            'key',
-            undefined,
-            key
-        ));
+        const items: KeyTreeItem[] = [];
+        
+        for (const key of filteredKeys) {
+            // Main key item
+            const keyItem = new KeyTreeItem(
+                key.name,
+                key.usageLocations && key.usageLocations.length > 0 ? 
+                    vscode.TreeItemCollapsibleState.Collapsed : 
+                    vscode.TreeItemCollapsibleState.None,
+                'key',
+                undefined,
+                key
+            );
+            items.push(keyItem);
+            
+            // Add usage locations as children if expanded
+            if (key.usageLocations && key.usageLocations.length > 0) {
+                // This will be handled in getChildren for expandable items
+            }
+        }
+        
+        return items;
     }
 
     /**
@@ -114,7 +158,7 @@ export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
             return [];
         }
 
-        const keys = await this.keyScanner.scanAllKeys();
+        const keys = await this.keyScanner!.scanAllKeys();
         const matchingKeys = keys.filter(key =>
             key.name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
             key.value.toLowerCase().includes(this.searchQuery.toLowerCase())
@@ -172,6 +216,91 @@ export class KeyTreeProvider implements vscode.TreeDataProvider<KeyTreeItem> {
     }
 
     /**
+     * Get usage locations for a specific key
+     */
+    private async getKeyUsageLocations(key: TestingKey): Promise<KeyTreeItem[]> {
+        if (!key.usageLocations || key.usageLocations.length === 0) {
+            return [];
+        }
+
+        const usageItems: KeyTreeItem[] = [];
+        
+        for (let i = 0; i < key.usageLocations.length; i++) {
+            const location = key.usageLocations[i];
+            const fileName = this.getFileName(location.uri.fsPath);
+            const lineNum = location.range.start.line + 1;
+            
+            // Get widget context for this usage
+            const widgetContext = await this.getWidgetContext(location);
+            
+            const usageItem = new KeyTreeItem(
+                `${fileName}:${lineNum} - ${widgetContext.widgetType}`,
+                vscode.TreeItemCollapsibleState.None,
+                'usage',
+                undefined,
+                key,
+                undefined,
+                undefined,
+                i,
+                location,
+                widgetContext
+            );
+            
+            usageItems.push(usageItem);
+        }
+        
+        return usageItems;
+    }
+
+    /**
+     * Get widget context for a key usage location
+     */
+    private async getWidgetContext(location: vscode.Location): Promise<WidgetContext> {
+        try {
+            const document = await vscode.workspace.openTextDocument(location.uri);
+            const line = document.lineAt(location.range.start.line);
+            const lineText = line.text;
+            
+            // Extract widget type from the line
+            const widgetMatch = lineText.match(/\b([A-Z]\w*(?:Button|Field|Dialog|Card|List|Tab|Icon|Widget))\b/);
+            const widgetType = widgetMatch ? widgetMatch[1] : 'Widget';
+            
+            // Get surrounding context (3 lines before and after)
+            const startLine = Math.max(0, location.range.start.line - 3);
+            const endLine = Math.min(document.lineCount - 1, location.range.start.line + 3);
+            
+            let context = '';
+            for (let i = startLine; i <= endLine; i++) {
+                const contextLine = document.lineAt(i);
+                const prefix = i === location.range.start.line ? '→ ' : '  ';
+                context += `${prefix}${i + 1}: ${contextLine.text.trim()}\n`;
+            }
+            
+            return {
+                widgetType,
+                context,
+                lineText: lineText.trim(),
+                fileName: this.getFileName(location.uri.fsPath)
+            };
+        } catch (error) {
+            return {
+                widgetType: 'Unknown',
+                context: 'Unable to read file context',
+                lineText: '',
+                fileName: this.getFileName(location.uri.fsPath)
+            };
+        }
+    }
+
+    /**
+     * Get filename from full path
+     */
+    private getFileName(filePath: string): string {
+        const parts = filePath.split('/');
+        return parts[parts.length - 1];
+    }
+
+    /**
      * Toggle unused keys visibility
      */
     toggleUnusedKeys(): void {
@@ -196,7 +325,10 @@ export class KeyTreeItem extends vscode.TreeItem {
         public readonly category?: KeyCategory,
         public readonly key?: TestingKey,
         public readonly statistics?: KeyStatistics,
-        public readonly count?: number
+        public readonly count?: number,
+        public readonly usageIndex?: number,
+        public readonly location?: vscode.Location,
+        public readonly widgetContext?: WidgetContext
     ) {
         super(label, collapsibleState);
 
@@ -213,6 +345,9 @@ export class KeyTreeItem extends vscode.TreeItem {
                 break;
             case 'statistics':
                 this.setupStatisticsItem();
+                break;
+            case 'usage':
+                this.setupUsageItem();
                 break;
         }
     }
@@ -240,19 +375,11 @@ export class KeyTreeItem extends vscode.TreeItem {
             this.iconPath = new vscode.ThemeIcon('key', new vscode.ThemeColor('charts.orange'));
         }
 
-        // Add command to open file
+        // Add command to use smart navigation
         this.command = {
-            command: 'vscode.open',
-            title: 'Open',
-            arguments: [
-                vscode.Uri.file(this.key.filePath),
-                {
-                    selection: new vscode.Range(
-                        this.key.line - 1, 0,
-                        this.key.line - 1, 0
-                    )
-                }
-            ]
+            command: 'flutterTestingKeys.goToDefinition',
+            title: 'Go to Definition',
+            arguments: [this]
         };
     }
 
@@ -262,6 +389,106 @@ export class KeyTreeItem extends vscode.TreeItem {
 
         if (this.statistics) {
             this.tooltip = this.createStatisticsTooltip();
+        }
+    }
+
+    private setupUsageItem(): void {
+        if (!this.location || !this.widgetContext) {
+            return;
+        }
+
+        // Set description with visual widget indicator
+        const widgetEmoji = this.getWidgetEmoji(this.widgetContext.widgetType);
+        this.description = `${widgetEmoji} ${this.widgetContext.lineText.length > 40 
+            ? this.widgetContext.lineText.substring(0, 40) + '...'
+            : this.widgetContext.lineText}`;
+
+        // Set icon based on widget type
+        this.iconPath = this.getWidgetIcon(this.widgetContext.widgetType);
+        
+        // Create tooltip with widget context and visual preview
+        this.tooltip = this.createUsageTooltip();
+
+        // Add command to use smart navigation
+        this.command = {
+            command: 'flutterTestingKeys.goToDefinition',
+            title: 'Go to Usage',
+            arguments: [this]
+        };
+    }
+
+    /**
+     * Get emoji representation for widget type
+     */
+    private getWidgetEmoji(widgetType: string): string {
+        switch (widgetType.toLowerCase()) {
+            case 'elevatedbutton':
+            case 'textbutton':
+            case 'outlinedbutton':
+                return '🔘';
+            case 'textfield':
+            case 'textformfield':
+                return '📝';
+            case 'checkbox':
+                return '☑️';
+            case 'card':
+                return '🗃️';
+            case 'listview':
+            case 'listtile':
+                return '📋';
+            case 'dialog':
+            case 'alertdialog':
+                return '💬';
+            case 'appbar':
+                return '📊';
+            case 'floatingactionbutton':
+                return '➕';
+            case 'container':
+                return '📦';
+            case 'scaffold':
+                return '🏗️';
+            case 'column':
+            case 'row':
+                return '📐';
+            case 'image':
+                return '🖼️';
+            case 'icon':
+                return '🎨';
+            default:
+                return '🧩';
+        }
+    }
+
+    /**
+     * Get VS Code icon for widget type
+     */
+    private getWidgetIcon(widgetType: string): vscode.ThemeIcon {
+        switch (widgetType.toLowerCase()) {
+            case 'elevatedbutton':
+            case 'textbutton':
+            case 'outlinedbutton':
+                return new vscode.ThemeIcon('zap', new vscode.ThemeColor('charts.blue'));
+            case 'textfield':
+            case 'textformfield':
+                return new vscode.ThemeIcon('edit', new vscode.ThemeColor('charts.green'));
+            case 'checkbox':
+                return new vscode.ThemeIcon('check', new vscode.ThemeColor('charts.purple'));
+            case 'card':
+                return new vscode.ThemeIcon('credit-card', new vscode.ThemeColor('charts.orange'));
+            case 'listview':
+            case 'listtile':
+                return new vscode.ThemeIcon('list-unordered', new vscode.ThemeColor('charts.yellow'));
+            case 'dialog':
+            case 'alertdialog':
+                return new vscode.ThemeIcon('comment-discussion', new vscode.ThemeColor('charts.red'));
+            case 'appbar':
+                return new vscode.ThemeIcon('browser', new vscode.ThemeColor('charts.blue'));
+            case 'floatingactionbutton':
+                return new vscode.ThemeIcon('add', new vscode.ThemeColor('charts.green'));
+            case 'container':
+                return new vscode.ThemeIcon('package', new vscode.ThemeColor('charts.gray'));
+            default:
+                return new vscode.ThemeIcon('symbol-method', new vscode.ThemeColor('charts.blue'));
         }
     }
 
@@ -317,6 +544,214 @@ export class KeyTreeItem extends vscode.TreeItem {
         }
 
         return tooltip;
+    }
+
+    private createUsageTooltip(): vscode.MarkdownString {
+        if (!this.widgetContext || !this.location) {
+            return new vscode.MarkdownString('');
+        }
+
+        const tooltip = new vscode.MarkdownString();
+        tooltip.supportHtml = true;
+        
+        // Add visual widget preview
+        const widgetPreview = this.generateWidgetPreview(this.widgetContext.widgetType, this.key?.name || '');
+        tooltip.appendMarkdown(`**🎨 Widget Preview**\n\n`);
+        tooltip.appendMarkdown(widgetPreview);
+        tooltip.appendMarkdown(`\n\n---\n\n`);
+        
+        tooltip.appendMarkdown(`**📍 Usage Location**\n\n`);
+        tooltip.appendMarkdown(`**File:** ${this.widgetContext.fileName}\n\n`);
+        tooltip.appendMarkdown(`**Widget:** ${this.widgetContext.widgetType}\n\n`);
+        tooltip.appendMarkdown(`**Line:** ${this.location.range.start.line + 1}\n\n`);
+        
+        if (this.key) {
+            tooltip.appendMarkdown(`**Key:** \`${this.key.name}\` = \`${this.key.value}\`\n\n`);
+        }
+        
+        tooltip.appendMarkdown(`**📋 Code Context:**\n`);
+        tooltip.appendCodeblock(this.widgetContext.context, 'dart');
+
+        return tooltip;
+    }
+
+    /**
+     * Generate ASCII visual preview of the widget
+     */
+    private generateWidgetPreview(widgetType: string, keyName: string): string {
+        const keyLabel = keyName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+        
+        switch (widgetType.toLowerCase()) {
+            case 'elevatedbutton':
+            case 'textbutton':
+            case 'outlinedbutton':
+                return this.generateButtonPreview(widgetType, keyLabel);
+            
+            case 'textfield':
+            case 'textformfield':
+                return this.generateTextFieldPreview(keyLabel);
+            
+            case 'checkbox':
+                return this.generateCheckboxPreview(keyLabel);
+            
+            case 'card':
+                return this.generateCardPreview(keyLabel);
+            
+            case 'listview':
+            case 'listtile':
+                return this.generateListPreview(keyLabel);
+            
+            case 'dialog':
+            case 'alertdialog':
+                return this.generateDialogPreview(keyLabel);
+            
+            case 'appbar':
+                return this.generateAppBarPreview(keyLabel);
+            
+            case 'floatingactionbutton':
+                return this.generateFABPreview(keyLabel);
+            
+            case 'container':
+                return this.generateContainerPreview(keyLabel);
+            
+            default:
+                return this.generateGenericWidgetPreview(widgetType, keyLabel);
+        }
+    }
+
+    private generateButtonPreview(type: string, label: string): string {
+        const buttonText = label || 'Button';
+        const buttonStyle = type === 'ElevatedButton' ? '█' : type === 'OutlinedButton' ? '▢' : '▬';
+        
+        return `\`\`\`
+┌─────────────────────┐
+│  ${buttonStyle} ${buttonText.padEnd(15)} │
+│     [${type}]     │
+└─────────────────────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateTextFieldPreview(label: string): string {
+        const fieldLabel = label || 'Text Field';
+        
+        return `\`\`\`
+┌─────────────────────┐
+│ ${fieldLabel}       │
+│ ┌─────────────────┐ │
+│ │ Enter text...   │ │
+│ └─────────────────┘ │
+└─────────────────────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateCheckboxPreview(label: string): string {
+        const checkLabel = label || 'Checkbox';
+        
+        return `\`\`\`
+┌─────────────────────┐
+│ ☐ ${checkLabel}     │
+│   [Checkbox]        │
+└─────────────────────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateCardPreview(label: string): string {
+        const cardLabel = label || 'Card';
+        
+        return `\`\`\`
+╭─────────────────────╮
+│                     │
+│    ${cardLabel}     │
+│                     │
+│   [Card Widget]     │
+│                     │
+╰─────────────────────╯
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateListPreview(label: string): string {
+        const listLabel = label || 'List Item';
+        
+        return `\`\`\`
+┌─────────────────────┐
+│ ● ${listLabel}      │
+│ ● Item 2            │
+│ ● Item 3            │
+│   [List/ListView]   │
+└─────────────────────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateDialogPreview(label: string): string {
+        const dialogLabel = label || 'Dialog';
+        
+        return `\`\`\`
+    ┌─────────────┐
+    │  ${dialogLabel} │
+    │             │
+    │   [Dialog]  │
+    │             │
+    │  [OK] [Cancel] │
+    └─────────────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateAppBarPreview(label: string): string {
+        const appBarLabel = label || 'App Bar';
+        
+        return `\`\`\`
+┌─────────────────────┐
+│ ☰  ${appBarLabel}   │
+│    [AppBar]      ⋮  │
+└─────────────────────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateFABPreview(label: string): string {
+        const fabLabel = label || 'FAB';
+        
+        return `\`\`\`
+              ┌─────┐
+              │  +  │
+              │ FAB │
+              └─────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateContainerPreview(label: string): string {
+        const containerLabel = label || 'Container';
+        
+        return `\`\`\`
+┌─────────────────────┐
+│                     │
+│   ${containerLabel} │
+│   [Container]       │
+│                     │
+└─────────────────────┘
+        Key: ${label}
+\`\`\``;
+    }
+
+    private generateGenericWidgetPreview(widgetType: string, label: string): string {
+        const widgetLabel = label || widgetType;
+        
+        return `\`\`\`
+┌─────────────────────┐
+│                     │
+│   ${widgetLabel}    │
+│   [${widgetType}]   │
+│                     │
+└─────────────────────┘
+        Key: ${label}  
+\`\`\``;
     }
 
     private getCategoryIcon(category: KeyCategory): vscode.ThemeIcon {

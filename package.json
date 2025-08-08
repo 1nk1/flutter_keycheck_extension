@@ -2,10 +2,10 @@
   "name": "flutter-testing-keys-inspector",
   "displayName": "Flutter Testing Keys Inspector",
   "description": "Professional testing keys management and validation for Flutter projects with intelligent code analysis",
-  "version": "1.0.0",
-  "publisher": "your-publisher-name",
+  "version": "1.4.0",
+  "publisher": "flutter-tools",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Testing",
@@ -22,7 +22,6 @@
     "code-analysis",
     "widget-testing"
   ],
-
   "galleryBanner": {
     "color": "#0175C2",
     "theme": "dark"
@@ -46,7 +45,7 @@
         {
           "id": "flutterTestingKeys",
           "name": "Testing Keys",
-          "when": "flutterProject"
+          "icon": "$(add)"
         }
       ]
     },
@@ -75,6 +74,56 @@
         "command": "flutterTestingKeys.goToDefinition",
         "title": "Go to Definition",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "flutterTestingKeys.openWidgetPreview",
+        "title": "Flutter Testing Keys: Open Widget Preview",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "flutterTestingKeys.qaAnalyzeMultiProject",
+        "title": "Flutter Testing Keys QA: Multi-Project Analysis",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "flutterTestingKeys.qaAnalyzeDependencies",
+        "title": "Flutter Testing Keys QA: Analyze Dependencies",
+        "icon": "$(package)"
+      },
+      {
+        "command": "flutterTestingKeys.qaAnalyzeRepositories",
+        "title": "Flutter Testing Keys QA: Analyze External Repositories",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "flutterTestingKeys.qaComprehensiveAnalysis",
+        "title": "Flutter Testing Keys QA: Comprehensive Analysis",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "flutterTestingKeys.qaBrokenKeyDetection",
+        "title": "Flutter Testing Keys QA: Broken Key Detection",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "flutterTestingKeys.demonstrateNavigation",
+        "title": "Flutter Testing Keys: Demonstrate Smart Navigation",
+        "icon": "$(target)"
+      },
+      {
+        "command": "flutterTestingKeys.testWidgetHighlighting",
+        "title": "Flutter Testing Keys: Test Widget Highlighting",
+        "icon": "$(paintcan)"
+      },
+      {
+        "command": "flutterTestingKeys.analyzeCurrentFileContext",
+        "title": "Flutter Testing Keys: Analyze Current File Context",
+        "icon": "$(search-view)"
+      },
+      {
+        "command": "flutterTestingKeys.showNavigationStats",
+        "title": "Flutter Testing Keys: Show Navigation Statistics",
+        "icon": "$(graph)"
       }
     ],
     "menus": {
@@ -93,6 +142,16 @@
           "command": "flutterTestingKeys.addKey",
           "when": "view == flutterTestingKeys",
           "group": "navigation"
+        },
+        {
+          "command": "flutterTestingKeys.openWidgetPreview",
+          "when": "view == flutterTestingKeys",
+          "group": "navigation"
+        },
+        {
+          "command": "flutterTestingKeys.qaComprehensiveAnalysis",
+          "when": "view == flutterTestingKeys",
+          "group": "qa"
         }
       ],
       "view/item/context": [
@@ -125,14 +184,71 @@
           "type": "boolean",
           "default": true,
           "description": "Enable diagnostic messages for key issues"
+        },
+        "flutterTestingKeys.repositories.external": {
+          "type": "array",
+          "default": [],
+          "description": "External repositories to analyze for testing keys",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "Repository URL (GitHub or GitLab)"
+              },
+              "branch": {
+                "type": "string",
+                "default": "main",
+                "description": "Branch to analyze"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for the repository"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether to include this repository in analysis"
+              }
+            },
+            "required": [
+              "url"
+            ]
+          }
+        },
+        "flutterTestingKeys.repositories.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub personal access token for private repositories"
+        },
+        "flutterTestingKeys.repositories.gitlabToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitLab access token for private repositories"
+        },
+        "flutterTestingKeys.qa.enableMultiProjectAnalysis": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable multi-project analysis for QA Engineers"
+        },
+        "flutterTestingKeys.qa.enableDependencyAnalysis": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable external dependency analysis"
+        },
+        "flutterTestingKeys.qa.enableRepositoryAnalysis": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable external repository analysis (requires configuration)"
         }
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && webpack --config webpack.webview.config.js",
     "watch": "tsc -watch -p ./",
+    "build-webview": "webpack --config webpack.webview.config.js",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
@@ -146,6 +262,8 @@
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "16.x",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
     "@types/vscode": "^1.74.0",
     "@typescript-eslint/eslint-plugin": "^5.45.0",
     "@typescript-eslint/parser": "^5.45.0",

@@ -8,6 +8,7 @@ export interface TestingKey {
     isUsed: boolean;
     usageFiles?: string[];
     usageCount?: number;
+    usageLocations?: import('vscode').Location[];
 }
 
 export enum KeyCategory {
